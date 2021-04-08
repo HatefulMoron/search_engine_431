@@ -1,0 +1,22 @@
+[package]
+name = "asgn1"
+version = "0.1.0"
+authors = ["Thomas Passmore <thomas@hateful.dev>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+
+[[bin]]
+name = "parse"
+path = "src/parse.rs"
+
+[[bin]]
+name = "index"
+path = "src/index.rs"
+
+[[bin]]
+name = "search"
+path = "src/search.rs"
+
