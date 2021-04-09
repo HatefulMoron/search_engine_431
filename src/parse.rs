@@ -1,5 +1,5 @@
 use std::io;
-use std::io::{Bytes, Read};
+use std::io::{stdout, BufWriter, Bytes, Read, Write};
 
 mod parsing;
 use parsing::terms::Terms;
@@ -11,6 +11,8 @@ fn main() {
     stdin.lock().read_to_end(&mut content).unwrap();
 
     let mut t = Tokens::new(content.as_slice());
+    let stdout = stdout();
+    let mut out = BufWriter::new(stdout.lock());
 
     while let Some(token) = t.next() {
         match token {
@@ -24,13 +26,14 @@ fn main() {
                     // Try print the document id
                     // Note the extra newline to separate documents
                     if let Some(Token::Text(id)) = t.next() {
-                        println!("\n{}", String::from_utf8(id.to_vec()).unwrap());
+                        writeln!(out, "{}", String::from_utf8(id.to_vec()).unwrap());
                     }
                 }
             }
             // https://en.wikipedia.org/wiki/List_of_XML_and_HTML_character_entity_references
             Token::Entity(data) => {
-                println!(
+                writeln!(
+                    out,
                     "{}",
                     match data {
                         b"quot" => "\"",
@@ -40,13 +43,13 @@ fn main() {
                         b"gt" => ">",
                         _ => "",
                     }
-                )
+                );
             }
             Token::Text(data) => {
                 let mut terms = Terms::new(data);
 
                 while let Some(term) = terms.next() {
-                    println!("{}", term);
+                    writeln!(out, "{}", term);
                 }
             }
         }
