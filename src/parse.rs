@@ -2,6 +2,7 @@ use std::io;
 use std::io::{stdout, BufWriter, Bytes, Read, Write};
 
 mod parsing;
+
 use parsing::terms::Terms;
 use parsing::tokens::{Token, Tokens};
 
@@ -11,8 +12,11 @@ fn main() {
     stdin.lock().read_to_end(&mut content).unwrap();
 
     let mut t = Tokens::new(content.as_slice());
+
     let stdout = stdout();
     let mut out = BufWriter::new(stdout.lock());
+
+    let mut first = true;
 
     while let Some(token) = t.next() {
         match token {
@@ -26,7 +30,12 @@ fn main() {
                     // Try print the document id
                     // Note the extra newline to separate documents
                     if let Some(Token::Text(id)) = t.next() {
-                        writeln!(out, "{}", String::from_utf8(id.to_vec()).unwrap());
+                        if first {
+                            first = false;
+                            writeln!(out, "{}", String::from_utf8(id.to_vec()).unwrap());
+                        } else {
+                            writeln!(out, "\n{}", String::from_utf8(id.to_vec()).unwrap());
+                        }
                     }
                 }
             }
