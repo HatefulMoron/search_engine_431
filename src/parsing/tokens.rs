@@ -238,11 +238,14 @@ mod tests {
 
     #[test]
     fn tricky() {
-        let mut t = Tokens::new(r#"</TEXT>
+        let mut t = Tokens::new(
+            r#"</TEXT>
 </DOC>
 <DOC>
 <DOCNO> WSJ870409-0155 </DOCNO>
-        "#.as_bytes());
+        "#
+            .as_bytes(),
+        );
 
         assert_next_tag(&mut t, false, "TEXT");
         assert_next_tag(&mut t, false, "DOC");
