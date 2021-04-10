@@ -102,7 +102,7 @@ impl<'a> Tokens<'a> {
         })
     }
 
-    fn read_entity(&mut self) -> Result<&'a [u8]> {
+    fn read_entity(&mut self) -> Result<Token<'a>> {
         if self.peek()? != b'&' {
             return Err(Error::ExpectedAmpersand);
         }
@@ -110,13 +110,19 @@ impl<'a> Tokens<'a> {
         self.ptr += 1;
         let start = self.ptr;
 
-        while self.peek()? != b';' {
+        while self.peek()? != b';' && !self.peek()?.is_ascii_whitespace() {
             self.ptr += 1;
+        }
+
+        // If we halted because we encountered whitespace, this isn't actually
+        // an entity ..
+        if self.peek()?.is_ascii_whitespace() {
+            return Ok(Token::Text(&self.buffer[start..self.ptr]));
         }
 
         // Skip over ';'
         self.ptr += 1;
-        Ok(&self.buffer[start..self.ptr - 1])
+        Ok(Token::Entity(&self.buffer[start..self.ptr - 1]))
     }
 }
 
@@ -129,7 +135,7 @@ impl<'a> Iterator for Tokens<'a> {
         if self.peek().ok()? == b'<' {
             Some(Token::Tag(self.read_tag().ok()?))
         } else if self.peek().ok()? == b'&' {
-            Some(Token::Entity(self.read_entity().ok()?))
+            Some(self.read_entity().ok()?)
         } else {
             // Otherwise, read until we find a '<' or '&'
             let start = self.ptr;
@@ -228,6 +234,21 @@ mod tests {
         assert_next_tag(&mut t, false, "DOCNO");
 
         assert!(t.next().is_none());
+    }
+
+    #[test]
+    fn tricky() {
+        let mut t = Tokens::new(r#"</TEXT>
+</DOC>
+<DOC>
+<DOCNO> WSJ870409-0155 </DOCNO>
+        "#.as_bytes());
+
+        assert_next_tag(&mut t, false, "TEXT");
+        assert_next_tag(&mut t, false, "DOC");
+        assert_next_tag(&mut t, true, "DOC");
+        assert_next_tag(&mut t, true, "DOCNO");
+        assert_next_text(&mut t, "WSJ870409-0155");
     }
 
     #[test]
