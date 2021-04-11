@@ -8,7 +8,7 @@ pub struct DiskIndex {
     blocks_file: File,
 
     // Loaded from disk immediately
-    docs: Vec<String>,
+    docs: Vec<Document>,
     root: Vec<(String, u32)>,
 
     // Loaded on an as-needed basis during search
@@ -80,7 +80,7 @@ impl DiskIndex {
         Ok(())
     }
 
-    pub fn postings(&mut self, term: &String) -> std::io::Result<Vec<u32>> {
+    pub fn postings(&mut self, term: &String) -> std::io::Result<Vec<Posting>> {
         let ind = match self.root.binary_search_by_key(&term, |(a, b)| a) {
             Ok(k) => self.root[k].1.clone(),
             Err(k) => self.root[k - 1].1.clone(),
@@ -113,11 +113,7 @@ enum Block {
     Unloaded,
 }
 
-pub struct Posting {
-    pub document_id: u32,
-}
-
-pub fn write_documents<'a, I: Iterator<Item = &'a [u8]>, W: Write>(
+pub fn write_documents<I: Iterator<Item = Document>, W: Write>(
     n: u32,
     mut iter: I,
     writer: &mut W,
@@ -127,16 +123,20 @@ pub fn write_documents<'a, I: Iterator<Item = &'a [u8]>, W: Write>(
     let mut offset: usize = 4;
 
     while let Some(doc) = iter.next() {
-        writer.write_all(&(doc.len()).to_be_bytes()[..])?;
-        writer.write_all(&doc[..])?;
+        // Write term count
+        writer.write_all(&doc.term_count.to_be_bytes()[..])?;
 
-        offset += (4 + doc.len());
+        // Write document name
+        writer.write_all(&(doc.name.len() as u32).to_be_bytes()[..])?;
+        writer.write_all(&doc.name.as_bytes()[..])?;
+
+        offset += (8 + doc.name.as_bytes().len());
     }
 
     Ok(offset)
 }
 
-pub fn read_documents<R: Read, C: Extend<String>>(
+pub fn read_documents<R: Read, C: Extend<Document>>(
     reader: &mut R,
     container: &mut C,
 ) -> std::io::Result<usize> {
@@ -149,7 +149,15 @@ pub fn read_documents<R: Read, C: Extend<String>>(
     let mut offset: usize = 4;
     let mut documents = Vec::new();
 
+    println!("{} documents", len);
+
     for _ in 0..len {
+        let term_count = {
+            let mut bytes: [u8; 4] = [0; 4];
+            reader.read_exact(&mut bytes[..])?;
+            u32::from_be_bytes(bytes)
+        };
+
         let len = {
             let mut len_bytes: [u8; 4] = [0; 4];
             reader.read_exact(&mut len_bytes[..])?;
@@ -163,8 +171,11 @@ pub fn read_documents<R: Read, C: Extend<String>>(
             container
         };
 
-        offset += 4 + bytes.len();
-        documents.push(String::from_utf8(bytes).unwrap());
+        offset += 8 + bytes.len();
+        documents.push(Document {
+            term_count,
+            name: String::from_utf8(bytes).unwrap(),
+        });
     }
 
     container.extend(documents);
@@ -172,7 +183,17 @@ pub fn read_documents<R: Read, C: Extend<String>>(
     Ok(offset)
 }
 
-pub fn write_postings<I: Iterator<Item = u32>, W: Write>(
+pub struct Posting {
+    pub document: u32,
+    pub frequency: u32,
+}
+
+pub struct Document {
+    pub term_count: u32,
+    pub name: String,
+}
+
+pub fn write_postings<I: Iterator<Item = Posting>, W: Write>(
     n: u32,
     mut iter: I,
     writer: &mut W,
@@ -182,10 +203,14 @@ pub fn write_postings<I: Iterator<Item = u32>, W: Write>(
     let mut offset: usize = 4;
 
     while let Some(posting) = iter.next() {
-        let bin: [u8; 4] = posting.to_be_bytes();
+        // Write document ID
+        let bin: [u8; 4] = posting.document.to_be_bytes();
         writer.write_all(&bin[..])?;
 
-        offset += 4;
+        let bin: [u8; 4] = posting.frequency.to_be_bytes();
+        writer.write_all(&bin[..])?;
+
+        offset += 8;
     }
 
     Ok(offset)
@@ -243,7 +268,7 @@ pub fn read_terms<R: Read, C: Extend<(String, u32)>>(
     Ok(())
 }
 
-pub fn read_postings<R: Read, C: Extend<u32>>(
+pub fn read_postings<R: Read, C: Extend<Posting>>(
     reader: &mut R,
     container: &mut C,
 ) -> std::io::Result<usize> {
@@ -259,9 +284,16 @@ pub fn read_postings<R: Read, C: Extend<u32>>(
     for _ in 0..len {
         let mut doc_id_bytes: [u8; 4] = [0; 4];
         reader.read_exact(&mut doc_id_bytes[..])?;
+        let document = u32::from_be_bytes(doc_id_bytes);
 
-        let doc_id = u32::from_be_bytes(doc_id_bytes);
-        postings.push(doc_id);
+        let mut frequency_bytes: [u8; 4] = [0; 4];
+        reader.read_exact(&mut frequency_bytes[..])?;
+        let frequency = u32::from_be_bytes(frequency_bytes);
+
+        postings.push(Posting {
+            document,
+            frequency,
+        });
         offset += 4;
     }
 
