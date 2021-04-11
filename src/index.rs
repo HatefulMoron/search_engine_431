@@ -3,7 +3,7 @@ use std::io;
 use std::io::{stdout, BufRead, BufReader, BufWriter, Bytes, Read, Write};
 
 mod indexing;
-use indexing::index::{write_postings, write_term};
+use indexing::index::{write_documents, write_postings, write_term};
 use indexing::string::AsciiString;
 use std::fs::File;
 
@@ -53,6 +53,18 @@ fn main() -> std::io::Result<()> {
         };
     }
 
+    // Write documents
+    {
+        let docs_file = File::create("documents.bin")?;
+        let mut docs_out = BufWriter::new(docs_file);
+
+        write_documents(
+            documents.len() as u32,
+            documents.iter().map(|s| s.as_bytes()),
+            &mut docs_out,
+        )?;
+    }
+
     // Write postings and blocks files concurrently
     let index = index.iter().collect::<Vec<_>>();
 
@@ -67,9 +79,12 @@ fn main() -> std::io::Result<()> {
         let mut index_out = BufWriter::new(index_file);
 
         let mut postings_offset: usize = 0;
-        let mut blocks_offset: usize = 0;
-        let mut index_offset: usize = 0;
+        let mut blocks_offset: usize = 4;
+        let mut index_offset: usize = 4;
         let mut n = 0;
+
+        block_out.write_all(&(index.len() as u32).to_be_bytes()[..])?;
+        index_out.write_all(&(index.len() as u32 / 1000).to_be_bytes()[..])?;
 
         for (term, postings) in index {
             println!("{}\t\t{}", term, postings.len());

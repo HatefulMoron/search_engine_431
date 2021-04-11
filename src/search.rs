@@ -1,14 +1,39 @@
 mod indexing;
-use indexing::index::read_dictionary;
+mod parsing;
+use indexing::index::DiskIndex;
+use parsing::terms::Terms;
+
 use std::fs::File;
-use std::io::BufReader;
+use std::io::{stdin, BufRead, BufReader, Cursor, Read};
 
-fn main() {
-    let mut dict = Vec::with_capacity(4192);
-    let mut file = File::open("dict.bin").unwrap();
-    let mut reader = BufReader::new(file);
+fn main() -> std::io::Result<()> {
+    let mut index = DiskIndex::from_disk()?;
 
-    read_dictionary(&mut dict, &mut reader);
+    let stdin = stdin();
+    for line in stdin.lock().lines() {
+        if let Ok(str) = line {
+            println!("query: '{}'", str);
+            let mut t = Terms::new(str.as_bytes());
 
-    //println!("dict size: {}", dict.len());
+            while let Some(term) = t.next() {
+                let postings = index.postings(&term)?;
+                println!("got {} postings for '{}'", postings.len(), term);
+            }
+        }
+    }
+
+    //let postings = index.postings(String::from("criminal"))?;
+    //println!("got {} postings for word", postings.len());
+    //let postings = index.postings(String::from("actions"))?;
+    //println!("got {} postings for word", postings.len());
+    //let postings = index.postings(String::from("officers"))?;
+    //println!("got {} postings for word", postings.len());
+    //let postings = index.postings(String::from("failed"))?;
+    //println!("got {} postings for word", postings.len());
+    //let postings = index.postings(String::from("financial"))?;
+    //println!("got {} postings for word", postings.len());
+    //let postings = index.postings(String::from("institutions"))?;
+    //println!("got {} postings for word", postings.len());
+
+    Ok(())
 }
