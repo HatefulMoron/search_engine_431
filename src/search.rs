@@ -12,15 +12,21 @@ fn main() -> std::io::Result<()> {
     let stdin = stdin();
     for line in stdin.lock().lines() {
         if let Ok(str) = line {
-            println!("query: '{}'", str);
-            let mut t = Terms::new(str.as_bytes());
-
-            while let Some(term) = t.next() {
-                let postings = index.postings(&term)?;
-                println!("got {} postings for '{}'", postings.len(), term);
+            let results = index.search(&str)?;
+            for r in results {
+                println!("{} {}", r.0, r.1);
             }
         }
     }
+    //        println!("query: '{}'", str);
+    //        let mut t = Terms::new(str.as_bytes());
+
+    //        while let Some(term) = t.next() {
+    //            let postings = index.postings(&term)?;
+    //            println!("got {} postings for '{}'", postings.len(), term);
+    //        }
+    //    }
+    //}
 
     //let postings = index.postings(String::from("criminal"))?;
     //println!("got {} postings for word", postings.len());

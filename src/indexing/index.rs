@@ -1,5 +1,7 @@
+use super::super::parsing::terms::Terms;
 use super::string::AsciiString;
-use std::collections::{BTreeMap, HashSet};
+
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 
@@ -63,6 +65,10 @@ impl DiskIndex {
     }
 
     fn ensure_block_loaded(&mut self, ptr: u32) -> std::io::Result<()> {
+        if let Some(Block::Loaded { block: _ }) = self.blocks.get(&ptr) {
+            return Ok(());
+        }
+
         self.blocks_file.seek(SeekFrom::Start(ptr as u64))?;
 
         let mut reader = BufReader::new(&mut self.blocks_file);
@@ -106,6 +112,37 @@ impl DiskIndex {
             Ok(Vec::new())
         }
     }
+
+    pub fn search(&mut self, query: &String) -> std::io::Result<Vec<(String, f32)>> {
+        // Document id -> w_dq
+        let mut weights: HashMap<u32, f32> = HashMap::new();
+
+        let mut t = Terms::new(query.as_bytes());
+        while let Some(term) = t.next() {
+            let postings = self.postings(&term)?;
+
+            let idf_t = f32::log10((self.docs.len() as f32) / (postings.len() as f32));
+
+            for posting in &postings {
+                let tf_td = 1.0 / (self.docs[posting.document as usize].term_count as f32);
+
+                match weights.get_mut(&posting.document) {
+                    Some(w) => *w += tf_td * idf_t,
+                    None => {
+                        weights.insert(posting.document, tf_td * idf_t);
+                    }
+                }
+            }
+        }
+
+        let mut ret = weights.into_iter().collect::<Vec<(u32, f32)>>();
+        ret.sort_by(|&a, &b| b.1.partial_cmp(&a.1).unwrap());
+
+        Ok(ret
+            .into_iter()
+            .map(|p| (self.docs[p.0 as usize].name.clone(), p.1))
+            .collect())
+    }
 }
 
 enum Block {
@@ -148,8 +185,6 @@ pub fn read_documents<R: Read, C: Extend<Document>>(
 
     let mut offset: usize = 4;
     let mut documents = Vec::new();
-
-    println!("{} documents", len);
 
     for _ in 0..len {
         let term_count = {
