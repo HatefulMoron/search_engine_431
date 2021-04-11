@@ -3,6 +3,8 @@ use std::io;
 use std::io::{stdout, BufRead, BufReader, BufWriter, Bytes, Read, Write};
 
 mod indexing;
+mod parsing;
+use parsing::terms::Terms;
 use indexing::index::{write_documents, write_postings, write_term, Document, Posting};
 use indexing::string::AsciiString;
 use std::fs::File;

@@ -22,28 +22,6 @@ fn main() -> std::io::Result<()> {
             out.flush()?;
         }
     }
-    //        println!("query: '{}'", str);
-    //        let mut t = Terms::new(str.as_bytes());
-
-    //        while let Some(term) = t.next() {
-    //            let postings = index.postings(&term)?;
-    //            println!("got {} postings for '{}'", postings.len(), term);
-    //        }
-    //    }
-    //}
-
-    //let postings = index.postings(String::from("criminal"))?;
-    //println!("got {} postings for word", postings.len());
-    //let postings = index.postings(String::from("actions"))?;
-    //println!("got {} postings for word", postings.len());
-    //let postings = index.postings(String::from("officers"))?;
-    //println!("got {} postings for word", postings.len());
-    //let postings = index.postings(String::from("failed"))?;
-    //println!("got {} postings for word", postings.len());
-    //let postings = index.postings(String::from("financial"))?;
-    //println!("got {} postings for word", postings.len());
-    //let postings = index.postings(String::from("institutions"))?;
-    //println!("got {} postings for word", postings.len());
 
     Ok(())
 }

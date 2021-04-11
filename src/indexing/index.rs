@@ -53,8 +53,6 @@ impl DiskIndex {
             blocks.insert(*ptr, Block::Unloaded);
         }
 
-        println!("{} docs, {} root elems", docs.len(), root.len());
-
         Ok(DiskIndex {
             post_file,
             blocks_file,
@@ -124,7 +122,7 @@ impl DiskIndex {
             let idf_t = f32::log10((self.docs.len() as f32) / (postings.len() as f32));
 
             for posting in &postings {
-                let tf_td = 1.0 / (self.docs[posting.document as usize].term_count as f32);
+                let tf_td = posting.frequency as f32 / (self.docs[posting.document as usize].term_count as f32);
 
                 match weights.get_mut(&posting.document) {
                     Some(w) => *w += tf_td * idf_t,
