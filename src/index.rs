@@ -4,9 +4,9 @@ use std::io::{stdout, BufRead, BufReader, BufWriter, Bytes, Read, Write};
 
 mod indexing;
 mod parsing;
-use parsing::terms::Terms;
 use indexing::index::{write_documents, write_postings, write_term, Document, Posting};
 use indexing::string::AsciiString;
+use parsing::terms::Terms;
 use std::fs::File;
 
 fn main() -> std::io::Result<()> {
@@ -20,7 +20,7 @@ fn main() -> std::io::Result<()> {
 
     // Term -> [document -> frequency]
     // Dictionary is set of terms/keys
-    let mut index: BTreeMap<AsciiString, HashMap<u32, u32>> = BTreeMap::new();
+    let mut index: BTreeMap<AsciiString, BTreeMap<u32, u32>> = BTreeMap::new();
     let mut lines = content.split(|b| *b == b'\n');
 
     loop {
@@ -63,7 +63,7 @@ fn main() -> std::io::Result<()> {
                 }
             }
             None => {
-                let mut map = HashMap::with_capacity(32);
+                let mut map = BTreeMap::new();
                 map.insert(documents.len() as u32 - 1, 1);
                 index.insert(AsciiString(line), map);
             }
@@ -111,8 +111,6 @@ fn main() -> std::io::Result<()> {
         index_out.write_all(&(index.len() as u32 / 1000).to_be_bytes()[..])?;
 
         for (term, postings) in index {
-            println!("{}\t\t{}", term, postings.len());
-
             let post_ptr = postings_offset;
 
             postings_offset += write_postings(

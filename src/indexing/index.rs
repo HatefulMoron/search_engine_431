@@ -4,6 +4,7 @@ use super::string::AsciiString;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
+use crate::indexing::varint::{write_varint, read_varint};
 
 pub struct DiskIndex {
     post_file: File,
@@ -122,7 +123,8 @@ impl DiskIndex {
             let idf_t = f32::log10((self.docs.len() as f32) / (postings.len() as f32));
 
             for posting in &postings {
-                let tf_td = posting.frequency as f32 / (self.docs[posting.document as usize].term_count as f32);
+                let tf_td = posting.frequency as f32
+                    / (self.docs[posting.document as usize].term_count as f32);
 
                 match weights.get_mut(&posting.document) {
                     Some(w) => *w += tf_td * idf_t,
@@ -229,21 +231,25 @@ pub struct Document {
 pub fn write_postings<I: Iterator<Item = Posting>, W: Write>(
     n: u32,
     mut iter: I,
-    writer: &mut W,
+    mut writer: &mut W,
 ) -> std::io::Result<usize> {
     writer.write_all(&n.to_be_bytes()[..])?;
 
     let mut offset: usize = 4;
+    let mut previous: u32 = 0;
 
     while let Some(posting) = iter.next() {
-        // Write document ID
-        let bin: [u8; 4] = posting.document.to_be_bytes();
-        writer.write_all(&bin[..])?;
+        // Let the document ID be the diff
+        assert!(posting.document >= previous);
+        let diff: u32 = posting.document - previous;
+        previous = posting.document;
+
+        offset += write_varint(&mut writer, diff as u64)?;
 
         let bin: [u8; 4] = posting.frequency.to_be_bytes();
         writer.write_all(&bin[..])?;
 
-        offset += 8;
+        offset += 4;
     }
 
     Ok(offset)
@@ -302,7 +308,7 @@ pub fn read_terms<R: Read, C: Extend<(String, u32)>>(
 }
 
 pub fn read_postings<R: Read, C: Extend<Posting>>(
-    reader: &mut R,
+    mut reader: &mut R,
     container: &mut C,
 ) -> std::io::Result<usize> {
     let len = {
@@ -312,12 +318,15 @@ pub fn read_postings<R: Read, C: Extend<Posting>>(
     };
 
     let mut offset: usize = 4;
+    let mut previous: u32 = 0;
     let mut postings = Vec::new();
 
     for _ in 0..len {
-        let mut doc_id_bytes: [u8; 4] = [0; 4];
-        reader.read_exact(&mut doc_id_bytes[..])?;
-        let document = u32::from_be_bytes(doc_id_bytes);
+        let (diff, off) = read_varint(&mut reader)?;
+        offset += off;
+
+        let document = (diff as u32) + previous;
+        previous = document;
 
         let mut frequency_bytes: [u8; 4] = [0; 4];
         reader.read_exact(&mut frequency_bytes[..])?;

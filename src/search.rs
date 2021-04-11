@@ -4,7 +4,7 @@ use indexing::index::DiskIndex;
 use parsing::terms::Terms;
 
 use std::fs::File;
-use std::io::{stdin, stdout, BufRead, BufReader, Cursor, Read, BufWriter, Write};
+use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Cursor, Read, Write};
 
 fn main() -> std::io::Result<()> {
     let mut index = DiskIndex::from_disk()?;
