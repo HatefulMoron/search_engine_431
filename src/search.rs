@@ -14,8 +14,8 @@ fn main() -> std::io::Result<()> {
     for line in stdin.lock().lines() {
         if let Ok(str) = line {
             let results = index.search(&str)?;
-            for r in results {
-                writeln!(out, "{} {}", r.0, r.1)?;
+            for r in results.into_iter() {
+                writeln!(out, "{} {}", r.1, r.0)?;
             }
             out.flush()?;
         }

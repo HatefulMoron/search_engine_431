@@ -1,9 +1,11 @@
 use super::super::parsing::terms::Terms;
 
+use crate::indexing::varint::{read_varint, write_varint};
 use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
-use crate::indexing::varint::{write_varint, read_varint};
+
+use ordered_float::OrderedFloat;
 
 pub struct DiskIndex {
     post_file: File,
@@ -62,16 +64,23 @@ impl DiskIndex {
         })
     }
 
+    // Ensure that the block given by the file offset `ptr` is loaded in
+    // memory.
     fn ensure_block_loaded(&mut self, ptr: u32) -> std::io::Result<()> {
+        // If the block is already loaded, no IO needs to be done.
         if let Some(Block::Loaded { block: _ }) = self.blocks.get(&ptr) {
             return Ok(());
         }
 
+        // Seek to the offset given by `ptr` from the beginning of the file.
         self.blocks_file.seek(SeekFrom::Start(ptr as u64))?;
 
         let mut reader = BufReader::new(&mut self.blocks_file);
         let mut rows = Vec::with_capacity(1000);
 
+        // Every block except the last block is exactly 1000 elements, so size
+        // information is not necessary. The last block will result in an EOF
+        // IO error which we can use to break early.
         for _ in 0..1000 {
             let term = match read_term(&mut reader) {
                 Ok(t) => t,
@@ -80,11 +89,29 @@ impl DiskIndex {
             rows.push(term);
         }
 
+        // Insert the block for any subsequent calls.
         self.blocks.insert(ptr, Block::Loaded { block: rows });
+
         Ok(())
     }
 
+    // Returns the set of postings for a given `term`. This function results
+    // in a disk read in the postings file.
     pub fn postings(&mut self, term: &String) -> std::io::Result<Vec<Posting>> {
+        // Binary search the root index for `term`.
+        // Note that because the root index is incomplete, it's likely that the
+        // term isn't in the root index.
+        // `binary_search_by_key` returns Err(k) when this happens, where
+        // `k` is the index where this element could be inserted to avoid
+        // disordering the structure.
+        // Because the structure is sorted alphabetically[1], we know that
+        // the previous element points to the block that would contain this
+        // term.
+        //
+        // [1]: https://doc.rust-lang.org/std/cmp/trait.Ord.html
+        // "When derived on structs, it will produce a lexicographic ordering
+        //  based on the top-to-bottom declaration order of the struct's
+        //  members."
         let ind = match self.root.binary_search_by_key(&term, |(a, _)| a) {
             Ok(k) => self.root[k].1.clone(),
             Err(k) => {
@@ -93,17 +120,25 @@ impl DiskIndex {
                 } else {
                     self.root[0].1.clone()
                 }
-            },
+            }
         };
 
+        // The given block needs to be loaded before we use it. We don't
+        // necessarily need to read the block from disk -- for instance if the
+        // block was previously loaded it will already be present.
         self.ensure_block_loaded(ind)?;
 
         if let Block::Loaded { block } = &self.blocks[&ind] {
+            // Binary search within the block to find the term.
+            // If the term isn't present, we definitely don't have any postings
+            // for the term and can return early.
             let ptr = match block.binary_search_by_key(&term, |(a, _)| a) {
                 Ok(k) => block[k].1.clone(),
                 Err(_) => return Ok(Vec::new()),
             };
 
+            // Seek in the postings file using `ptr` as the offset from the
+            // beginning of the file.
             self.post_file.seek(SeekFrom::Start(ptr as u64))?;
 
             let mut reader = BufReader::new(&mut self.post_file);
@@ -117,36 +152,50 @@ impl DiskIndex {
         }
     }
 
-    pub fn search(&mut self, query: &String) -> std::io::Result<Vec<(String, f32)>> {
+    pub fn search(
+        &mut self,
+        query: &String,
+    ) -> std::io::Result<impl Iterator<Item = (f32, String)>> {
         // Document id -> w_dq
         let mut weights: HashMap<u32, f32> = HashMap::new();
+        weights.reserve(self.docs.len());
 
         let mut t = Terms::new(query.as_bytes());
+
+        // The standard tf-idf equation is written in terms of the weights per
+        // document, which is backwards from how we store the postings[1],
+        // so we keep a hashmap relating document IDs with the accumulated
+        // weight and iterate through each term of the query.
+        //
+        // [1]: postings are stored in terms of the terms themselves, with a
+        // subsequent list of documents.
+
         while let Some(term) = t.next() {
             let postings = self.postings(&term)?;
 
+            // idf_t = log(N / N_{t})
+            // where    N       = total number of documents,
+            //          N_{t}   = number of documents with term `t` present
             let idf_t = f32::log10((self.docs.len() as f32) / ((postings.len() + 1) as f32));
 
             for posting in &postings {
                 let tf_td = posting.frequency as f32
                     / (self.docs[posting.document as usize].term_count as f32);
 
-                match weights.get_mut(&posting.document) {
-                    Some(w) => *w += tf_td * idf_t,
-                    None => {
-                        weights.insert(posting.document, tf_td * idf_t);
-                    }
-                }
+                let w = weights.entry(posting.document).or_insert(0.0);
+                *w += tf_td * idf_t;
             }
         }
 
-        let mut ret = weights.into_iter().collect::<Vec<(u32, f32)>>();
-        ret.sort_by(|&a, &b| b.1.partial_cmp(&a.1).unwrap());
-
-        Ok(ret
+        let res: BTreeMap<OrderedFloat<f32>, String> = weights
             .into_iter()
-            .map(|p| (self.docs[p.0 as usize].name.clone(), p.1))
-            .collect())
+            .map(|(doc, w)| {
+                let r: String = self.docs[doc as usize].name.clone();
+                (OrderedFloat(w), r)
+            })
+            .collect();
+
+        Ok(res.into_iter().map(|(w, n)| (w.0, n)).rev())
     }
 }
 
@@ -155,6 +204,15 @@ enum Block {
     Unloaded,
 }
 
+// +-----------------+
+// | N      (varint) |
+// +-----------------+
+// ..
+// +---------------------+----------------------+-----------------------+
+// | Term Count (varint) | Name Length (varint) | Document Name (bytes) |
+// +---------------------+----------------------+-----------------------+
+// ..
+// (N times)
 pub fn write_documents<I: Iterator<Item = Document>, W: Write>(
     n: u32,
     mut iter: I,
@@ -180,7 +238,6 @@ pub fn read_documents<R: Read, C: Extend<Document>>(
     mut reader: &mut R,
     container: &mut C,
 ) -> std::io::Result<usize> {
-
     let (len, mut offset) = read_varint(&mut reader)?;
 
     let mut documents = Vec::new();
@@ -255,7 +312,6 @@ pub fn write_term<W: Write>(buf: &[u8], ptr: u32, mut writer: &mut W) -> std::io
 }
 
 pub fn read_term<R: Read>(mut reader: &mut R) -> std::io::Result<(String, u32)> {
-
     let (len, _offset) = read_varint(&mut reader)?;
 
     let mut data = Vec::with_capacity(len as usize);

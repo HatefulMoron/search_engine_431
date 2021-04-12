@@ -104,7 +104,7 @@ fn main() -> std::io::Result<()> {
 
         let mut postings_offset: usize = 0;
         let mut blocks_offset: usize = write_varint(&mut block_out, index.len() as u64)?;
-        let mut index_offset: usize = write_varint(&mut index_out, (index.len() as u64)/1000)?;
+        let mut index_offset: usize = write_varint(&mut index_out, (index.len() as u64) / 1000)?;
         let mut n = 0;
 
         for (term, postings) in index {
