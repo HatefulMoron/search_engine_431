@@ -1,17 +1,11 @@
-use std::io;
-use std::io::{Bytes, Read};
-
 #[derive(Debug)]
 enum Error {
-    Io(std::io::Error),
     ExpectedOpenBrace,
-    ExpectedCloseBrace,
     ExpectedAmpersand,
-    UnexpectedClosingTag,
     UnexpectedEOF,
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub struct Tag<'a> {

@@ -13,7 +13,7 @@ pub fn write_varint<W: Write>(writer: &mut W, mut v: u64) -> std::io::Result<usi
             v >>= 7;
             buffer <<= 8;
             buffer |= 0x80;
-            buffer += (v & 0x7f);
+            buffer += v & 0x7f;
         }
 
         loop {

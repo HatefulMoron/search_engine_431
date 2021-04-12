@@ -1,13 +1,12 @@
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::io;
-use std::io::{stdout, BufRead, BufReader, BufWriter, Bytes, Read, Write};
+use std::io::{BufWriter, Read, Write};
 
 mod indexing;
 mod parsing;
 use indexing::index::{write_documents, write_postings, write_term, Document, Posting};
 use indexing::string::AsciiString;
 use indexing::varint::write_varint;
-use parsing::terms::Terms;
 use std::fs::File;
 
 fn main() -> std::io::Result<()> {
@@ -132,9 +131,9 @@ fn main() -> std::io::Result<()> {
             n += 1;
         }
 
-        post_out.flush();
-        block_out.flush();
-        index_out.flush();
+        post_out.flush()?;
+        block_out.flush()?;
+        index_out.flush()?;
     }
 
     Ok(())

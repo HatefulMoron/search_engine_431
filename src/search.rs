@@ -1,10 +1,8 @@
 mod indexing;
 mod parsing;
 use indexing::index::DiskIndex;
-use parsing::terms::Terms;
 
-use std::fs::File;
-use std::io::{stdin, stdout, BufRead, BufReader, BufWriter, Cursor, Read, Write};
+use std::io::{stdin, stdout, BufRead, BufWriter, Write};
 
 fn main() -> std::io::Result<()> {
     let mut index = DiskIndex::from_disk()?;

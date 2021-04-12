@@ -1,7 +1,6 @@
 use super::super::parsing::terms::Terms;
-use super::string::AsciiString;
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 use crate::indexing::varint::{write_varint, read_varint};
@@ -20,14 +19,14 @@ pub struct DiskIndex {
 
 impl DiskIndex {
     pub fn from_disk() -> std::io::Result<DiskIndex> {
-        let mut post_file = File::open("postings.bin")?;
-        let mut blocks_file = File::open("blocks.bin")?;
+        let post_file = File::open("postings.bin")?;
+        let blocks_file = File::open("blocks.bin")?;
         let mut documents_file = File::open("documents.bin")?;
         let mut index_file = File::open("index.bin")?;
 
         let docs = {
             let mut bytes = Vec::with_capacity(8192);
-            documents_file.read_to_end(&mut bytes);
+            documents_file.read_to_end(&mut bytes)?;
 
             let mut reader = Cursor::new(bytes);
             let mut buffer = Vec::with_capacity(8192);
@@ -38,7 +37,7 @@ impl DiskIndex {
 
         let root = {
             let mut bytes = Vec::with_capacity(8192);
-            index_file.read_to_end(&mut bytes);
+            index_file.read_to_end(&mut bytes)?;
 
             let mut reader = Cursor::new(bytes);
             let mut buffer = Vec::with_capacity(8192);
@@ -86,7 +85,7 @@ impl DiskIndex {
     }
 
     pub fn postings(&mut self, term: &String) -> std::io::Result<Vec<Posting>> {
-        let ind = match self.root.binary_search_by_key(&term, |(a, b)| a) {
+        let ind = match self.root.binary_search_by_key(&term, |(a, _)| a) {
             Ok(k) => self.root[k].1.clone(),
             Err(k) => {
                 if k > 0 {
@@ -100,9 +99,9 @@ impl DiskIndex {
         self.ensure_block_loaded(ind)?;
 
         if let Block::Loaded { block } = &self.blocks[&ind] {
-            let ptr = match block.binary_search_by_key(&term, |(a, b)| a) {
+            let ptr = match block.binary_search_by_key(&term, |(a, _)| a) {
                 Ok(k) => block[k].1.clone(),
-                Err(k) => return Ok(Vec::new()),
+                Err(_) => return Ok(Vec::new()),
             };
 
             self.post_file.seek(SeekFrom::Start(ptr as u64))?;
@@ -126,7 +125,7 @@ impl DiskIndex {
         while let Some(term) = t.next() {
             let postings = self.postings(&term)?;
 
-            let idf_t = f32::log10((self.docs.len() as f32) / (postings.len() as f32));
+            let idf_t = f32::log10((self.docs.len() as f32) / ((postings.len() + 1) as f32));
 
             for posting in &postings {
                 let tf_td = posting.frequency as f32
@@ -193,7 +192,7 @@ pub fn read_documents<R: Read, C: Extend<Document>>(
         let bytes = {
             let mut container = Vec::with_capacity(len as usize);
             container.resize(len as usize, 0);
-            reader.read_exact(container.as_mut_slice());
+            reader.read_exact(container.as_mut_slice())?;
             container
         };
 

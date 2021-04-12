@@ -1,11 +1,9 @@
-use std::borrow::Cow;
-
 #[derive(Debug)]
 enum Error {
     UnexpectedEOF,
 }
 
-pub type Result<T> = std::result::Result<T, Error>;
+type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug)]
 pub struct Terms<'a> {
