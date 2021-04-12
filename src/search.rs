@@ -15,7 +15,7 @@ fn main() -> std::io::Result<()> {
         if let Ok(str) = line {
             let results = index.search(&str)?;
             for r in results.into_iter() {
-                writeln!(out, "{} {}", r.1, r.0)?;
+                writeln!(out, "{} {}", index.document(r.1), r.0)?;
             }
             out.flush()?;
         }

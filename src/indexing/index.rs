@@ -6,13 +6,19 @@ use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 
 use ordered_float::OrderedFloat;
+use smallvec::SmallVec;
+
+struct DiskDocument {
+    term_count: u32,
+    name: SmallVec<[u8; 32]>
+}
 
 pub struct DiskIndex {
     post_file: File,
     blocks_file: File,
 
     // Loaded from disk immediately
-    docs: Vec<Document>,
+    docs: Vec<DiskDocument>,
     root: Vec<(String, u32)>,
 
     // Loaded on an as-needed basis during search
@@ -152,10 +158,14 @@ impl DiskIndex {
         }
     }
 
+    pub fn document(&self, doc: u32) -> &str {
+        std::str::from_utf8(self.docs[doc as usize].name.as_slice()).unwrap()
+    }
+
     pub fn search(
         &mut self,
         query: &String,
-    ) -> std::io::Result<impl Iterator<Item = (f32, String)>> {
+    ) -> std::io::Result<impl Iterator<Item = (f32, u32)>> {
         // Document id -> w_dq
         let mut weights: HashMap<u32, f32> = HashMap::new();
         weights.reserve(self.docs.len());
@@ -187,11 +197,10 @@ impl DiskIndex {
             }
         }
 
-        let res: BTreeMap<OrderedFloat<f32>, String> = weights
+        let res: BTreeMap<OrderedFloat<f32>, u32> = weights
             .into_iter()
             .map(|(doc, w)| {
-                let r: String = self.docs[doc as usize].name.clone();
-                (OrderedFloat(w), r)
+                (OrderedFloat(w), doc)
             })
             .collect();
 
@@ -234,7 +243,7 @@ pub fn write_documents<I: Iterator<Item = Document>, W: Write>(
     Ok(offset)
 }
 
-pub fn read_documents<R: Read, C: Extend<Document>>(
+pub fn read_documents<R: Read, C: Extend<DiskDocument>>(
     mut reader: &mut R,
     container: &mut C,
 ) -> std::io::Result<usize> {
@@ -247,7 +256,7 @@ pub fn read_documents<R: Read, C: Extend<Document>>(
         let (len, len_offset) = read_varint(&mut reader)?;
 
         let bytes = {
-            let mut container = Vec::with_capacity(len as usize);
+            let mut container = SmallVec::<[u8; 32]>::new();
             container.resize(len as usize, 0);
             reader.read_exact(container.as_mut_slice())?;
             container
@@ -255,9 +264,9 @@ pub fn read_documents<R: Read, C: Extend<Document>>(
 
         offset += term_count_offset + len_offset + bytes.len();
 
-        documents.push(Document {
+        documents.push(DiskDocument {
             term_count: term_count as u32,
-            name: String::from_utf8(bytes).unwrap(),
+            name: bytes,
         });
     }
 
