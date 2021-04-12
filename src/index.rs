@@ -6,6 +6,7 @@ mod indexing;
 mod parsing;
 use indexing::index::{write_documents, write_postings, write_term, Document, Posting};
 use indexing::string::AsciiString;
+use indexing::varint::write_varint;
 use parsing::terms::Terms;
 use std::fs::File;
 
@@ -103,12 +104,9 @@ fn main() -> std::io::Result<()> {
         let mut index_out = BufWriter::new(index_file);
 
         let mut postings_offset: usize = 0;
-        let mut blocks_offset: usize = 4;
-        let mut index_offset: usize = 4;
+        let mut blocks_offset: usize = write_varint(&mut block_out, index.len() as u64)?;
+        let mut index_offset: usize = write_varint(&mut index_out, (index.len() as u64)/1000)?;
         let mut n = 0;
-
-        block_out.write_all(&(index.len() as u32).to_be_bytes()[..])?;
-        index_out.write_all(&(index.len() as u32 / 1000).to_be_bytes()[..])?;
 
         for (term, postings) in index {
             let post_ptr = postings_offset;
