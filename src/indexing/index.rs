@@ -10,7 +10,7 @@ use smallvec::SmallVec;
 
 struct DiskDocument {
     term_count: u32,
-    name: SmallVec<[u8; 32]>
+    name: SmallVec<[u8; 32]>,
 }
 
 pub struct DiskIndex {
@@ -162,10 +162,7 @@ impl DiskIndex {
         std::str::from_utf8(self.docs[doc as usize].name.as_slice()).unwrap()
     }
 
-    pub fn search(
-        &mut self,
-        query: &String,
-    ) -> std::io::Result<impl Iterator<Item = (f32, u32)>> {
+    pub fn search(&mut self, query: &String) -> std::io::Result<impl Iterator<Item = (f32, u32)>> {
         // Document id -> w_dq
         let mut weights: HashMap<u32, f32> = HashMap::new();
         weights.reserve(self.docs.len());
@@ -186,7 +183,9 @@ impl DiskIndex {
             // idf_t = log(N / N_{t})
             // where    N       = total number of documents,
             //          N_{t}   = number of documents with term `t` present
-            let idf_t = f32::log10((self.docs.len() as f32) / ((postings.len() + 1) as f32));
+            let N = self.docs.len() as f32;
+            let n_t = postings.len() as f32;
+            let idf_t = f32::log10((N - n_t) / n_t);
 
             for posting in &postings {
                 let tf_td = posting.frequency as f32
@@ -199,9 +198,7 @@ impl DiskIndex {
 
         let res: BTreeMap<OrderedFloat<f32>, u32> = weights
             .into_iter()
-            .map(|(doc, w)| {
-                (OrderedFloat(w), doc)
-            })
+            .map(|(doc, w)| (OrderedFloat(w), doc))
             .collect();
 
         Ok(res.into_iter().map(|(w, n)| (w.0, n)).rev())

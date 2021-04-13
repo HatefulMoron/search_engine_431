@@ -5,23 +5,22 @@ use std::io::{BufWriter, Read, Write};
 mod indexing;
 mod parsing;
 use indexing::index::{write_documents, write_postings, write_term, Document, Posting};
-use indexing::string::AsciiString;
 use indexing::varint::write_varint;
 use std::fs::File;
 
 fn main() -> std::io::Result<()> {
     let stdin = io::stdin();
-    let mut content = Vec::new();
-    stdin.lock().read_to_end(&mut content).unwrap();
+    let mut content = String::new();
+    stdin.lock().read_to_string(&mut content).unwrap();
 
     // Docno, term count
-    let mut documents: Vec<(AsciiString, u32)> = Vec::new();
+    let mut documents: Vec<(&str, u32)> = Vec::new();
     let mut term_count: u32 = 0;
 
     // Term -> [document -> frequency]
     // Dictionary is set of terms/keys
-    let mut index: BTreeMap<AsciiString, BTreeMap<u32, u32>> = BTreeMap::new();
-    let mut lines = content.split(|b| *b == b'\n');
+    let mut index: BTreeMap<&str, BTreeMap<u32, u32>> = BTreeMap::new();
+    let mut lines = content.split(|c| c == '\n');
 
     loop {
         let line = match lines.next() {
@@ -30,18 +29,18 @@ fn main() -> std::io::Result<()> {
         };
 
         if documents.is_empty() {
-            documents.push((AsciiString(line), 0));
+            documents.push((line, 0));
             continue;
         }
 
         if line.is_empty() {
             match lines.next() {
-                Some(l) => {
+                Some(doc_line) => {
                     // TODO: refactor
                     let prev = documents.len() - 1;
                     documents[prev].1 = term_count;
                     term_count = 0;
-                    documents.push((AsciiString(l), 0))
+                    documents.push((doc_line, 0))
                 }
                 None => break,
             }
@@ -52,7 +51,7 @@ fn main() -> std::io::Result<()> {
 
         assert!(!line.is_empty());
 
-        match index.get_mut(&AsciiString(line)) {
+        match index.get_mut(line) {
             Some(map) => {
                 let k = documents.len() as u32 - 1;
                 match map.get_mut(&k) {
@@ -65,7 +64,7 @@ fn main() -> std::io::Result<()> {
             None => {
                 let mut map = BTreeMap::new();
                 map.insert(documents.len() as u32 - 1, 1);
-                index.insert(AsciiString(line), map);
+                index.insert(line, map);
             }
         };
     }
@@ -83,7 +82,7 @@ fn main() -> std::io::Result<()> {
             documents.len() as u32,
             documents.iter().map(|(name, term_count)| Document {
                 term_count: *term_count,
-                name: String::from_utf8(name.as_bytes().to_vec()).unwrap(),
+                name: name.to_string(),
             }),
             &mut docs_out,
         )?;
