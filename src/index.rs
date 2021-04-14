@@ -22,11 +22,7 @@ fn main() -> std::io::Result<()> {
     let mut index: BTreeMap<&str, BTreeMap<u64, u64>> = BTreeMap::new();
     let mut lines = content.split(|c| c == '\n');
 
-    loop {
-        let line = match lines.next() {
-            Some(l) => l,
-            None => break,
-        };
+    while let Some(line) = lines.next() {
 
         if documents.is_empty() {
             documents.push((line, 0));
@@ -107,9 +103,9 @@ fn main() -> std::io::Result<()> {
         let mut postings_offset: usize = 0;
         let mut blocks_offset: usize = write_varint(&mut block_out, index.len() as u64)?;
         let mut index_offset: usize = write_varint(&mut index_out, (index.len() as u64) / 1000)?;
-        let mut n = 0;
 
-        for (term, postings) in index {
+        for (n, (term, postings)) in index.into_iter().enumerate() {
+
             let post_ptr = postings_offset;
 
             postings_offset += write_postings(
@@ -129,8 +125,6 @@ fn main() -> std::io::Result<()> {
             if n % 1000 == 0 {
                 index_offset += write_term(term.as_bytes(), block_ptr as u64, &mut index_out)?;
             }
-
-            n += 1;
         }
 
         post_out.flush()?;

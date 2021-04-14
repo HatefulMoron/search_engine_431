@@ -116,7 +116,7 @@ impl DiskIndex {
 
     // Returns the set of postings for a given `term`. This function results
     // in a disk read in the postings file.
-    pub fn postings(&mut self, term: &String) -> std::io::Result<Vec<Posting>> {
+    pub fn postings(&mut self, term: &str) -> std::io::Result<Vec<Posting>> {
         // Binary search the root index for `term`.
         // Note that because the root index is incomplete, it's likely that the
         // term isn't in the root index.
@@ -132,12 +132,12 @@ impl DiskIndex {
         //  based on the top-to-bottom declaration order of the struct's
         //  members."
         let ind = match self.root.binary_search_by_key(&term, |(a, _)| a) {
-            Ok(k) => self.root[k].1.clone(),
+            Ok(k) => self.root[k].1,
             Err(k) => {
                 if k > 0 {
-                    self.root[k - 1].1.clone()
+                    self.root[k - 1].1
                 } else {
-                    self.root[0].1.clone()
+                    self.root[0].1
                 }
             }
         };
@@ -152,7 +152,7 @@ impl DiskIndex {
             // If the term isn't present, we definitely don't have any postings
             // for the term and can return early.
             let ptr = match block.binary_search_by_key(&term, |(a, _)| a) {
-                Ok(k) => block[k].1.clone(),
+                Ok(k) => block[k].1,
                 Err(_) => return Ok(Vec::new()),
             };
 
@@ -176,19 +176,19 @@ impl DiskIndex {
         std::str::from_utf8(self.docs[doc as usize].name.as_slice()).unwrap()
     }
 
-    pub fn search(&mut self, query: &String) -> std::io::Result<impl Iterator<Item = (f32, u64)>> {
+    pub fn search(&mut self, query: &str) -> std::io::Result<impl Iterator<Item = (f32, u64)>> {
         // Document id -> w_dq
         let mut weights: HashMap<u64, f32> = HashMap::new();
         weights.reserve(self.docs.len());
 
-        let mut t = Terms::new(query.as_str());
+        let t = Terms::new(query);
 
         // (BM25)
         // score(D,Q) = Sum{1..n}
         // IDF(q_i) * ( ( f(q_i, D) * (k_1 + 1) ) /
         //   ( f(q_i, D) + k_1 * (1 - b + b * (|D| / avgdl))) )
 
-        while let Some(term) = t.next() {
+        for term in t {
             let postings = self.postings(&term)?;
 
             // IDF(q_i) = ln( (N - n(q_i) + 0.5) / (n(q_i) + 0.5) + 1)
@@ -245,13 +245,13 @@ enum Block {
 pub fn write_documents<I: Iterator<Item = Document>, W: Write>(
     n: u64,
     avg_dl: f32,
-    mut iter: I,
+    iter: I,
     mut writer: &mut W,
 ) -> std::io::Result<usize> {
     let mut offset = write_varint(&mut writer, n as u64)?;
     writer.write_all(&avg_dl.to_be_bytes()[..])?;
 
-    while let Some(doc) = iter.next() {
+    for doc in iter {
         // Write term count
         offset += write_varint(&mut writer, doc.term_count as u64)?;
 
@@ -282,7 +282,7 @@ pub fn read_documents<R: Read, C: Extend<DiskDocument>>(
     // Read the average document length
     {
         let mut bytes: [u8; 4] = [0; 4];
-        reader.read_exact(&mut bytes[..]);
+        reader.read_exact(&mut bytes[..])?;
         *avg_dl = f32::from_be_bytes(bytes);
     }
 
@@ -315,13 +315,13 @@ pub fn read_documents<R: Read, C: Extend<DiskDocument>>(
 // Write a set of postings, given by `iter` to `writer`.
 pub fn write_postings<I: Iterator<Item = Posting>, W: Write>(
     n: u64,
-    mut iter: I,
+    iter: I,
     mut writer: &mut W,
 ) -> std::io::Result<usize> {
     let mut offset = write_varint(&mut writer, n as u64)?;
     let mut previous: u64 = 0;
 
-    while let Some(posting) = iter.next() {
+    for posting in iter {
         // Let the document ID be the diff, which we encode in varint format.
         assert!(posting.document >= previous);
         let diff: u64 = posting.document - previous;
@@ -355,8 +355,7 @@ pub fn write_term<W: Write>(buf: &[u8], ptr: u64, mut writer: &mut W) -> std::io
 pub fn read_term<R: Read>(mut reader: &mut R) -> std::io::Result<(String, u64)> {
     let (len, _offset) = read_varint(&mut reader)?;
 
-    let mut data = Vec::with_capacity(len as usize);
-    data.resize(len as usize, 0);
+    let mut data = vec![0; len as usize];
 
     reader.read_exact(data.as_mut_slice())?;
 

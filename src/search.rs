@@ -31,7 +31,7 @@ fn main() -> std::io::Result<()> {
 
                 (Some(id.parse::<u32>().unwrap()), split.fold(String::new(), |mut a, b| {
                     a.push_str(b);
-                    a.push_str(" ");
+                    a.push(' ');
                     a
                 }))
             } else {

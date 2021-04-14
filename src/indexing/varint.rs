@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 // The writing procedure is from the MIDI format specification
 pub fn write_varint<W: Write>(writer: &mut W, mut v: u64) -> std::io::Result<usize> {
     if v == 0 {
-        writer.write(&[0x00])?;
+        writer.write_all(&[0x00])?;
         Ok(1)
     } else {
         let mut offset = 0;

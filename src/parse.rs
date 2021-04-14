@@ -27,9 +27,9 @@ fn main() -> std::io::Result<()> {
                     if let Some(Token::Text(id)) = t.next() {
                         if first {
                             first = false;
-                            writeln!(out, "{}", id);
+                            writeln!(out, "{}", id)?;
                         } else {
-                            writeln!(out, "\n{}", id);
+                            writeln!(out, "\n{}", id)?;
                         }
                     }
                 }
@@ -50,9 +50,9 @@ fn main() -> std::io::Result<()> {
                 )?;
             }
             Token::Text(data) => {
-                let mut terms = Terms::new(data);
+                let terms = Terms::new(data);
 
-                while let Some(term) = terms.next() {
+                for term in terms {
                     writeln!(out, "{}", term)?;
                 }
             }

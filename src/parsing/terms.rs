@@ -1,13 +1,6 @@
 use lazy_static::lazy_static;
 use regex::{Matches, Regex};
 
-#[derive(Debug)]
-enum Error {
-    UnexpectedEOF,
-}
-
-type Result<T> = std::result::Result<T, Error>;
-
 pub struct Terms<'a> {
     matches: Matches<'static, 'a>,
 }
@@ -27,8 +20,7 @@ impl<'a> Iterator for Terms<'a> {
     type Item = String;
 
     fn next(&mut self) -> Option<String> {
-        loop {
-            let m = self.matches.next()?;
+        while let Some(m) = self.matches.next() {
             let s = m.as_str();
 
             if s.chars().any(|c| c.is_alphanumeric()) {
