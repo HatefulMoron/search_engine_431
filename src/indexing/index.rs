@@ -9,7 +9,7 @@ use ordered_float::OrderedFloat;
 use smallvec::SmallVec;
 
 struct DiskDocument {
-    term_count: u32,
+    term_count: u64,
     name: SmallVec<[u8; 32]>,
 }
 
@@ -20,10 +20,20 @@ pub struct DiskIndex {
     // Loaded from disk immediately
     docs: Vec<DiskDocument>,
     avg_dl: f32,
-    root: Vec<(String, u32)>,
+    root: Vec<(String, u64)>,
 
     // Loaded on an as-needed basis during search
-    blocks: BTreeMap<u32, Block>,
+    blocks: BTreeMap<u64, Block>,
+}
+
+pub struct Posting {
+    pub document: u64,
+    pub frequency: u64,
+}
+
+pub struct Document {
+    pub term_count: u64,
+    pub name: String,
 }
 
 impl DiskIndex {
@@ -75,7 +85,7 @@ impl DiskIndex {
 
     // Ensure that the block given by the file offset `ptr` is loaded in
     // memory.
-    fn ensure_block_loaded(&mut self, ptr: u32) -> std::io::Result<()> {
+    fn ensure_block_loaded(&mut self, ptr: u64) -> std::io::Result<()> {
         // If the block is already loaded, no IO needs to be done.
         if let Some(Block::Loaded { block: _ }) = self.blocks.get(&ptr) {
             return Ok(());
@@ -161,13 +171,14 @@ impl DiskIndex {
         }
     }
 
-    pub fn document(&self, doc: u32) -> &str {
+    // Returns the document name associated with the document index `doc`.
+    pub fn document(&self, doc: u64) -> &str {
         std::str::from_utf8(self.docs[doc as usize].name.as_slice()).unwrap()
     }
 
-    pub fn search(&mut self, query: &String) -> std::io::Result<impl Iterator<Item = (f32, u32)>> {
+    pub fn search(&mut self, query: &String) -> std::io::Result<impl Iterator<Item = (f32, u64)>> {
         // Document id -> w_dq
-        let mut weights: HashMap<u32, f32> = HashMap::new();
+        let mut weights: HashMap<u64, f32> = HashMap::new();
         weights.reserve(self.docs.len());
 
         let mut t = Terms::new(query.as_str());
@@ -193,8 +204,12 @@ impl DiskIndex {
                 let term_freq = posting.frequency as f32;
 
                 let D = self.docs[posting.document as usize].term_count as f32;
-                let k = 1.2;
-                let b = 0.75;
+
+                // Reference: Andrew Trotman, Matt Crane, "Snip!".
+                // http://www.cs.otago.ac.nz/homepages/andrew/papers/2011-13.pdf
+                let k = 0.9;
+                let b = 0.4;
+
                 let score_qt = idf
                     * ((term_freq * (k + 1.0))
                         / (term_freq + k * (1.0 - b + b * (D / self.avg_dl))));
@@ -204,7 +219,7 @@ impl DiskIndex {
             }
         }
 
-        let res: BTreeMap<OrderedFloat<f32>, u32> = weights
+        let res: BTreeMap<OrderedFloat<f32>, u64> = weights
             .into_iter()
             .map(|(doc, w)| (OrderedFloat(w), doc))
             .collect();
@@ -214,13 +229,13 @@ impl DiskIndex {
 }
 
 enum Block {
-    Loaded { block: Vec<(String, u32)> },
+    Loaded { block: Vec<(String, u64)> },
     Unloaded,
 }
 
-// +-----------------+
-// | N      (varint) |
-// +-----------------+
+// +-----------------+------------------------------------------+
+// | N      (varint) | Average Document Length (f32/big endian) |
+// +-----------------+------------------------------------------+
 // ..
 // +---------------------+----------------------+-----------------------+
 // | Term Count (varint) | Name Length (varint) | Document Name (bytes) |
@@ -228,7 +243,7 @@ enum Block {
 // ..
 // (N times)
 pub fn write_documents<I: Iterator<Item = Document>, W: Write>(
-    n: u32,
+    n: u64,
     avg_dl: f32,
     mut iter: I,
     mut writer: &mut W,
@@ -250,6 +265,12 @@ pub fn write_documents<I: Iterator<Item = Document>, W: Write>(
     Ok(offset)
 }
 
+// Read a set of documents inside `reader`.
+// `avg_dl` is a mutable reference to a floating point variable which will hold
+// the average document length. This is used by the search engine, which uses
+// BM25 ranking.
+// `container` can be any structure which is extended from `DiskDocument`s,
+// although realistically it's probably going to be a vector.
 pub fn read_documents<R: Read, C: Extend<DiskDocument>>(
     mut reader: &mut R,
     avg_dl: &mut f32,
@@ -281,7 +302,7 @@ pub fn read_documents<R: Read, C: Extend<DiskDocument>>(
         offset += term_count_offset + len_offset + bytes.len();
 
         documents.push(DiskDocument {
-            term_count: term_count as u32,
+            term_count: term_count as u64,
             name: bytes,
         });
     }
@@ -291,28 +312,19 @@ pub fn read_documents<R: Read, C: Extend<DiskDocument>>(
     Ok(offset)
 }
 
-pub struct Posting {
-    pub document: u32,
-    pub frequency: u32,
-}
-
-pub struct Document {
-    pub term_count: u32,
-    pub name: String,
-}
-
+// Write a set of postings, given by `iter` to `writer`.
 pub fn write_postings<I: Iterator<Item = Posting>, W: Write>(
-    n: u32,
+    n: u64,
     mut iter: I,
     mut writer: &mut W,
 ) -> std::io::Result<usize> {
     let mut offset = write_varint(&mut writer, n as u64)?;
-    let mut previous: u32 = 0;
+    let mut previous: u64 = 0;
 
     while let Some(posting) = iter.next() {
-        // Let the document ID be the diff
+        // Let the document ID be the diff, which we encode in varint format.
         assert!(posting.document >= previous);
-        let diff: u32 = posting.document - previous;
+        let diff: u64 = posting.document - previous;
         previous = posting.document;
 
         offset += write_varint(&mut writer, diff as u64)?;
@@ -322,7 +334,11 @@ pub fn write_postings<I: Iterator<Item = Posting>, W: Write>(
     Ok(offset)
 }
 
-pub fn write_term<W: Write>(buf: &[u8], ptr: u32, mut writer: &mut W) -> std::io::Result<usize> {
+// A term on disk is the UTF-8 data prefixed by a varint describing the length
+// of the term. A pointer is added as a suffix to point to a file offset in
+// a different binary file. The exact semantics of the pointer depends on which
+// file the term is being written to.
+pub fn write_term<W: Write>(buf: &[u8], ptr: u64, mut writer: &mut W) -> std::io::Result<usize> {
     // Write string length
     let mut offset = write_varint(&mut writer, buf.len() as u64)?;
 
@@ -336,7 +352,7 @@ pub fn write_term<W: Write>(buf: &[u8], ptr: u32, mut writer: &mut W) -> std::io
     Ok(offset)
 }
 
-pub fn read_term<R: Read>(mut reader: &mut R) -> std::io::Result<(String, u32)> {
+pub fn read_term<R: Read>(mut reader: &mut R) -> std::io::Result<(String, u64)> {
     let (len, _offset) = read_varint(&mut reader)?;
 
     let mut data = Vec::with_capacity(len as usize);
@@ -346,10 +362,10 @@ pub fn read_term<R: Read>(mut reader: &mut R) -> std::io::Result<(String, u32)> 
 
     let (ptr, _offset) = read_varint(&mut reader)?;
 
-    Ok((String::from_utf8(data).unwrap(), ptr as u32))
+    Ok((String::from_utf8(data).unwrap(), ptr as u64))
 }
 
-pub fn read_terms<R: Read, C: Extend<(String, u32)>>(
+pub fn read_terms<R: Read, C: Extend<(String, u64)>>(
     mut reader: &mut R,
     container: &mut C,
 ) -> std::io::Result<()> {
@@ -370,14 +386,14 @@ pub fn read_postings<R: Read, C: Extend<Posting>>(
 ) -> std::io::Result<usize> {
     let (len, mut offset) = read_varint(&mut reader)?;
 
-    let mut previous: u32 = 0;
+    let mut previous: u64 = 0;
     let mut postings = Vec::new();
 
     for _ in 0..len {
         let (diff, off) = read_varint(&mut reader)?;
         offset += off;
 
-        let document = (diff as u32) + previous;
+        let document = (diff as u64) + previous;
         previous = document;
 
         let (frequency, off) = read_varint(&mut reader)?;
@@ -385,7 +401,7 @@ pub fn read_postings<R: Read, C: Extend<Posting>>(
 
         postings.push(Posting {
             document,
-            frequency: frequency as u32,
+            frequency: frequency as u64,
         });
         offset += 4;
     }

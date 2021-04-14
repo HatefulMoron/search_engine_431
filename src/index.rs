@@ -14,12 +14,12 @@ fn main() -> std::io::Result<()> {
     stdin.lock().read_to_string(&mut content).unwrap();
 
     // Docno, term count
-    let mut documents: Vec<(&str, u32)> = Vec::new();
-    let mut term_count: u32 = 0;
+    let mut documents: Vec<(&str, u64)> = Vec::new();
+    let mut term_count: u64 = 0;
 
     // Term -> [document -> frequency]
     // Dictionary is set of terms/keys
-    let mut index: BTreeMap<&str, BTreeMap<u32, u32>> = BTreeMap::new();
+    let mut index: BTreeMap<&str, BTreeMap<u64, u64>> = BTreeMap::new();
     let mut lines = content.split(|c| c == '\n');
 
     loop {
@@ -53,17 +53,17 @@ fn main() -> std::io::Result<()> {
 
         match index.get_mut(line) {
             Some(map) => {
-                let k = documents.len() as u32 - 1;
+                let k = documents.len() as u64 - 1;
                 match map.get_mut(&k) {
                     Some(p) => *p += 1,
                     None => {
-                        map.insert(documents.len() as u32 - 1, 1);
+                        map.insert(documents.len() as u64 - 1, 1);
                     }
                 }
             }
             None => {
                 let mut map = BTreeMap::new();
-                map.insert(documents.len() as u32 - 1, 1);
+                map.insert(documents.len() as u64 - 1, 1);
                 index.insert(line, map);
             }
         };
@@ -81,7 +81,7 @@ fn main() -> std::io::Result<()> {
         let mut docs_out = BufWriter::new(docs_file);
 
         write_documents(
-            documents.len() as u32,
+            documents.len() as u64,
             avg_dl,
             documents.iter().map(|(name, term_count)| Document {
                 term_count: *term_count,
@@ -113,7 +113,7 @@ fn main() -> std::io::Result<()> {
             let post_ptr = postings_offset;
 
             postings_offset += write_postings(
-                postings.len() as u32,
+                postings.len() as u64,
                 postings.iter().map(|(&document, &frequency)| Posting {
                     document,
                     frequency,
@@ -123,11 +123,11 @@ fn main() -> std::io::Result<()> {
 
             let block_ptr = blocks_offset;
 
-            blocks_offset += write_term(term.as_bytes(), post_ptr as u32, &mut block_out)?;
+            blocks_offset += write_term(term.as_bytes(), post_ptr as u64, &mut block_out)?;
 
             // Write every 1000 terms to the root index
             if n % 1000 == 0 {
-                index_offset += write_term(term.as_bytes(), block_ptr as u32, &mut index_out)?;
+                index_offset += write_term(term.as_bytes(), block_ptr as u64, &mut index_out)?;
             }
 
             n += 1;
