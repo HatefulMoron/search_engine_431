@@ -1,3 +1,6 @@
+use lazy_static::lazy_static;
+use regex::{Matches, Regex};
+
 #[derive(Debug)]
 enum Error {
     UnexpectedEOF,
@@ -5,32 +8,17 @@ enum Error {
 
 type Result<T> = std::result::Result<T, Error>;
 
-#[derive(Debug)]
 pub struct Terms<'a> {
-    buffer: &'a [u8],
-    ptr: usize,
+    matches: Matches<'static, 'a>,
 }
 
 impl<'a> Terms<'a> {
-    pub fn new(buffer: &'a [u8]) -> Self {
-        Terms { buffer, ptr: 0 }
-    }
-
-    fn peek(&self) -> Result<u8> {
-        if self.ptr >= self.buffer.len() {
-            Err(Error::UnexpectedEOF)
-        } else {
-            Ok(self.buffer[self.ptr])
+    pub fn new(buffer: &'a str) -> Self {
+        lazy_static! {
+            static ref RE: Regex = Regex::new(r"\w+(?:'\w+)?|[^\w\s]").unwrap();
         }
-    }
-
-    fn skip_whitespace(&mut self) {
-        while self.ptr < self.buffer.len() {
-            if !self.buffer[self.ptr].is_ascii_whitespace() {
-                break;
-            } else {
-                self.ptr += 1;
-            }
+        Terms {
+            matches: RE.find_iter(buffer),
         }
     }
 }
@@ -39,48 +27,16 @@ impl<'a> Iterator for Terms<'a> {
     type Item = String;
 
     fn next(&mut self) -> Option<String> {
-        self.skip_whitespace();
+        loop {
+            let m = self.matches.next()?;
+            let s = m.as_str();
 
-        if self.peek().ok()?.is_ascii_alphanumeric() {
-            let mut result = String::with_capacity(12);
-
-            result.push(self.peek().ok()? as char);
-            self.ptr += 1;
-
-            // Basic handling of contractions
-            loop {
-                let next = match self.peek() {
-                    Ok(c) => c as char,
-                    Err(_) => break,
-                };
-
-                if next.is_ascii_alphanumeric() || next == '\'' {
-                    result.push(next);
-                    self.ptr += 1;
-                } else {
-                    break;
-                }
+            if s.chars().any(|c| c.is_alphanumeric()) {
+                return Some(m.as_str().to_ascii_lowercase());
             }
-
-            Some(result.to_ascii_lowercase())
-        } else {
-            let start = self.ptr;
-
-            loop {
-                let next = match self.peek() {
-                    Ok(c) => c as char,
-                    Err(_) => break,
-                };
-
-                if !next.is_ascii_alphanumeric() && !next.is_ascii_whitespace() {
-                    self.ptr += 1;
-                } else {
-                    break;
-                }
-            }
-
-            Some(String::from_utf8(Vec::from(&self.buffer[start..self.ptr])).unwrap())
         }
+
+        None
     }
 }
 
@@ -90,35 +46,25 @@ mod tests {
 
     #[test]
     fn non_alphanumeric() {
-        let mut t = Terms::new("$123".as_bytes());
-        assert_eq!(t.next(), Some(String::from("$")));
+        let mut t = Terms::new("$123");
         assert_eq!(t.next(), Some(String::from("123")));
         assert_eq!(t.next(), None);
 
-        let mut t = Terms::new("123$$123".as_bytes());
+        let mut t = Terms::new("123$$123");
         assert_eq!(t.next(), Some(String::from("123")));
-        assert_eq!(t.next(), Some(String::from("$$")));
         assert_eq!(t.next(), Some(String::from("123")));
         assert_eq!(t.next(), None);
     }
 
     #[test]
     fn contractions() {
-        let mut t = Terms::new("a'ight ain't amn't aren't can't could've couldn't couldn't've didn't doesn't don't hasn't".as_bytes());
+        let mut t = Terms::new(
+            "a'ight ain't amn't aren't can't could've couldn't didn't doesn't don't hasn't",
+        );
 
         let terms = [
-            "a'ight",
-            "ain't",
-            "amn't",
-            "aren't",
-            "can't",
-            "could've",
-            "couldn't",
-            "couldn't've",
-            "didn't",
-            "doesn't",
-            "don't",
-            "hasn't",
+            "a'ight", "ain't", "amn't", "aren't", "can't", "could've", "couldn't", "didn't",
+            "doesn't", "don't", "hasn't",
         ];
 
         assert_eq!(
@@ -131,7 +77,7 @@ mod tests {
     fn basic_words() {
         let mut t = Terms::new(
             "John Blair was acquired last year by Reliance Capital Group Inc., which has been divesting itself of John Blair's major assets."
-                .as_bytes(),
+                ,
         );
 
         let terms = [
@@ -146,7 +92,6 @@ mod tests {
             "capital",
             "group",
             "inc",
-            ".,",
             "which",
             "has",
             "been",
@@ -157,7 +102,6 @@ mod tests {
             "blair's",
             "major",
             "assets",
-            ".",
         ];
 
         assert_eq!(

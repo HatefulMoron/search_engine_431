@@ -63,6 +63,7 @@ All file formats are binary, and they are explained below,
 | Type | Name | Notes |
 |------|------|---------|
 | varint | length | Size of document name in bytes. |
+| 32bit float (big endian) | avg_dl | Average document length in terms. |
 | UTF-8 bytes | name | Length given by previous value. |
 
 #### postings.bin element format

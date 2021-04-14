@@ -19,6 +19,7 @@ pub struct DiskIndex {
 
     // Loaded from disk immediately
     docs: Vec<DiskDocument>,
+    avg_dl: f32,
     root: Vec<(String, u32)>,
 
     // Loaded on an as-needed basis during search
@@ -31,6 +32,7 @@ impl DiskIndex {
         let blocks_file = File::open("blocks.bin")?;
         let mut documents_file = File::open("documents.bin")?;
         let mut index_file = File::open("index.bin")?;
+        let mut avg_dl = 0.0;
 
         let docs = {
             let mut bytes = Vec::with_capacity(8192);
@@ -39,7 +41,7 @@ impl DiskIndex {
             let mut reader = Cursor::new(bytes);
             let mut buffer = Vec::with_capacity(8192);
 
-            read_documents(&mut reader, &mut buffer)?;
+            read_documents(&mut reader, &mut avg_dl, &mut buffer)?;
             buffer
         };
 
@@ -65,6 +67,7 @@ impl DiskIndex {
             post_file,
             blocks_file,
             docs,
+            avg_dl,
             root,
             blocks,
         })
@@ -167,32 +170,37 @@ impl DiskIndex {
         let mut weights: HashMap<u32, f32> = HashMap::new();
         weights.reserve(self.docs.len());
 
-        let mut t = Terms::new(query.as_bytes());
+        let mut t = Terms::new(query.as_str());
 
-        // The standard tf-idf equation is written in terms of the weights per
-        // document, which is backwards from how we store the postings[1],
-        // so we keep a hashmap relating document IDs with the accumulated
-        // weight and iterate through each term of the query.
-        //
-        // [1]: postings are stored in terms of the terms themselves, with a
-        // subsequent list of documents.
+        // (BM25)
+        // score(D,Q) = Sum{1..n}
+        // IDF(q_i) * ( ( f(q_i, D) * (k_1 + 1) ) /
+        //   ( f(q_i, D) + k_1 * (1 - b + b * (|D| / avgdl))) )
 
         while let Some(term) = t.next() {
             let postings = self.postings(&term)?;
 
-            // idf_t = log(N / N_{t})
-            // where    N       = total number of documents,
-            //          N_{t}   = number of documents with term `t` present
+            // IDF(q_i) = ln( (N - n(q_i) + 0.5) / (n(q_i) + 0.5) + 1)
+            // where,
+            // N = total number of documents in the collection,
+            // n(q_i) = number of documents containing q_i
             let N = self.docs.len() as f32;
-            let n_t = postings.len() as f32;
-            let idf_t = f32::log10((N - n_t) / n_t);
+            let n_q_i = postings.len() as f32;
+            let idf = (((N - n_q_i + 0.5) / (n_q_i + 0.5)) + 1.0).ln();
 
             for posting in &postings {
-                let tf_td = posting.frequency as f32
-                    / (self.docs[posting.document as usize].term_count as f32);
+                // f(qi, D) = term frequency in document D,
+                let term_freq = posting.frequency as f32;
+
+                let D = self.docs[posting.document as usize].term_count as f32;
+                let k = 1.2;
+                let b = 0.75;
+                let score_qt = idf
+                    * ((term_freq * (k + 1.0))
+                        / (term_freq + k * (1.0 - b + b * (D / self.avg_dl))));
 
                 let w = weights.entry(posting.document).or_insert(0.0);
-                *w += tf_td * idf_t;
+                *w += score_qt;
             }
         }
 
@@ -221,10 +229,12 @@ enum Block {
 // (N times)
 pub fn write_documents<I: Iterator<Item = Document>, W: Write>(
     n: u32,
+    avg_dl: f32,
     mut iter: I,
     mut writer: &mut W,
 ) -> std::io::Result<usize> {
     let mut offset = write_varint(&mut writer, n as u64)?;
+    writer.write_all(&avg_dl.to_be_bytes()[..])?;
 
     while let Some(doc) = iter.next() {
         // Write term count
@@ -242,9 +252,18 @@ pub fn write_documents<I: Iterator<Item = Document>, W: Write>(
 
 pub fn read_documents<R: Read, C: Extend<DiskDocument>>(
     mut reader: &mut R,
+    avg_dl: &mut f32,
     container: &mut C,
 ) -> std::io::Result<usize> {
+    // Read number of documents
     let (len, mut offset) = read_varint(&mut reader)?;
+
+    // Read the average document length
+    {
+        let mut bytes: [u8; 4] = [0; 4];
+        reader.read_exact(&mut bytes[..]);
+        *avg_dl = f32::from_be_bytes(bytes);
+    }
 
     let mut documents = Vec::new();
 

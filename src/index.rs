@@ -75,11 +75,14 @@ fn main() -> std::io::Result<()> {
 
     // Write documents
     {
+        let avg_dl = documents.iter().fold(0, |a, &b| a + b.1) as f32 / documents.len() as f32;
+
         let docs_file = File::create("documents.bin")?;
         let mut docs_out = BufWriter::new(docs_file);
 
         write_documents(
             documents.len() as u32,
+            avg_dl,
             documents.iter().map(|(name, term_count)| Document {
                 term_count: *term_count,
                 name: name.to_string(),

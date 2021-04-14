@@ -10,32 +10,27 @@ type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug)]
 pub struct Tag<'a> {
     pub open: bool,
-    pub name: &'a [u8],
+    pub name: &'a str,
 }
 
 #[derive(Debug)]
 pub enum Token<'a> {
-    Text(&'a [u8]),
+    Text(&'a str),
     Tag(Tag<'a>),
-    Entity(&'a [u8]),
+    Entity(&'a str),
 }
 
 impl<'a> std::fmt::Display for Token<'a> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Token::Text(data) => {
-                write!(f, "text: '{}'", String::from_utf8(data.to_vec()).unwrap())
+                write!(f, "text: '{}'", data)
             }
             Token::Tag(tag) => {
-                write!(
-                    f,
-                    "tag: {}, '{}'",
-                    tag.open,
-                    String::from_utf8(tag.name.to_vec()).unwrap()
-                )
+                write!(f, "tag: {}, '{}'", tag.open, tag.name,)
             }
             Token::Entity(name) => {
-                write!(f, "entity '{}'", String::from_utf8(name.to_vec()).unwrap())
+                write!(f, "entity '{}'", name)
             }
         }
     }
@@ -92,7 +87,7 @@ impl<'a> Tokens<'a> {
 
         Ok(Tag {
             open,
-            name: &self.buffer[start..self.ptr - 1],
+            name: std::str::from_utf8(&self.buffer[start..self.ptr - 1]).unwrap(),
         })
     }
 
@@ -111,12 +106,16 @@ impl<'a> Tokens<'a> {
         // If we halted because we encountered whitespace, this isn't actually
         // an entity ..
         if self.peek()?.is_ascii_whitespace() {
-            return Ok(Token::Text(&self.buffer[start..self.ptr]));
+            return Ok(Token::Text(
+                std::str::from_utf8(&self.buffer[start..self.ptr]).unwrap(),
+            ));
         }
 
         // Skip over ';'
         self.ptr += 1;
-        Ok(Token::Entity(&self.buffer[start..self.ptr - 1]))
+        Ok(Token::Entity(
+            std::str::from_utf8(&self.buffer[start..self.ptr - 1]).unwrap(),
+        ))
     }
 }
 
@@ -149,7 +148,9 @@ impl<'a> Iterator for Tokens<'a> {
                 self.ptr += 1;
             }
 
-            Some(Token::Text(&self.buffer[start..=end]))
+            Some(Token::Text(
+                std::str::from_utf8(&self.buffer[start..=end]).unwrap(),
+            ))
         }
     }
 }
@@ -161,7 +162,7 @@ mod tests {
     fn assert_next_tag<'a>(t: &mut Tokens<'a>, open: bool, name: &'a str) {
         if let Token::Tag(tag) = t.next().unwrap() {
             assert_eq!(tag.open, open);
-            assert_eq!(String::from_utf8(tag.name.to_vec()).unwrap(), name);
+            assert_eq!(tag.name, name);
         } else {
             panic!("Not tag");
         }
@@ -169,7 +170,7 @@ mod tests {
 
     fn assert_next_text<'a>(t: &mut Tokens<'a>, text: &'a str) {
         if let Token::Text(data) = t.next().unwrap() {
-            assert_eq!(String::from_utf8(data.to_vec()).unwrap(), text);
+            assert_eq!(data, text);
         } else {
             panic!("Not tag");
         }
@@ -177,7 +178,7 @@ mod tests {
 
     fn assert_next_entity<'a>(t: &mut Tokens<'a>, text: &'a str) {
         if let Token::Entity(data) = t.next().unwrap() {
-            assert_eq!(String::from_utf8(data.to_vec()).unwrap(), text);
+            assert_eq!(data, text);
         } else {
             panic!("Not tag");
         }

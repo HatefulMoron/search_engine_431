@@ -21,20 +21,15 @@ fn main() -> std::io::Result<()> {
     while let Some(token) = t.next() {
         match token {
             Token::Tag(tag) => {
-                if tag.open
-                    && String::from_utf8(tag.name.to_vec())
-                        .unwrap()
-                        .to_ascii_lowercase()
-                        == "docno"
-                {
+                if tag.open && tag.name.to_ascii_lowercase() == "docno" {
                     // Try print the document id
                     // Note the extra newline to separate documents
                     if let Some(Token::Text(id)) = t.next() {
                         if first {
                             first = false;
-                            writeln!(out, "{}", String::from_utf8(id.to_vec()).unwrap())?;
+                            writeln!(out, "{}", id);
                         } else {
-                            writeln!(out, "\n{}", String::from_utf8(id.to_vec()).unwrap())?;
+                            writeln!(out, "\n{}", id);
                         }
                     }
                 }
@@ -45,11 +40,11 @@ fn main() -> std::io::Result<()> {
                     out,
                     "{}",
                     match data {
-                        b"quot" => "\"",
-                        b"amp" => "&",
-                        b"apos" => "'",
-                        b"lt" => "<",
-                        b"gt" => ">",
+                        "quot" => "\"",
+                        "amp" => "&",
+                        "apos" => "'",
+                        "lt" => "<",
+                        "gt" => ">",
                         _ => "",
                     }
                 )?;
