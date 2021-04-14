@@ -6,7 +6,14 @@ use std::env;
 use std::io::{stdin, stdout, BufRead, BufWriter, Write};
 
 fn main() -> std::io::Result<()> {
-    let mut index = DiskIndex::from_disk()?;
+    let mut index = match DiskIndex::from_disk() {
+        Ok(index) => index,
+        Err(_) => {
+            eprintln!("Failed to load index from disk.");
+            eprintln!("(Are the binary index files in this directory?)");
+            return Ok(())
+        }
+    };
 
     let stdout = stdout();
     let mut out = BufWriter::new(stdout.lock());

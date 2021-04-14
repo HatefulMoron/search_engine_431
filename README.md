@@ -87,6 +87,15 @@ unit
 
 ### Index
 
+#### Prebuilt Index
+I've built a premade index located at,
+```text
+/home/cshome/t/tpassmore/search_engine_431
+```
+
+As noted below, the index files which the search engine uses are
+`index.bin`, `blocks.bin`, `postings.bin` and `documents.bin`.
+
 #### Example,
 
 ```commandline
