@@ -5,7 +5,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::fs::File;
 use std::io::{BufReader, Cursor, Read, Seek, SeekFrom, Write};
 
-use ordered_float::OrderedFloat;
 use smallvec::SmallVec;
 
 struct DiskDocument {
@@ -178,6 +177,9 @@ impl DiskIndex {
 
     pub fn search(&mut self, query: &str) -> std::io::Result<impl Iterator<Item = (f32, u64)>> {
         // Document id -> w_dq
+        // We use a HashMap here instead of a Vec because (hopefully?) the
+        // weights will be sparse. That is, not many documents will have a
+        // positive score relative to the overall corpus size.
         let mut weights: HashMap<u64, f32> = HashMap::new();
         weights.reserve(self.docs.len());
 
@@ -197,7 +199,13 @@ impl DiskIndex {
             // n(q_i) = number of documents containing q_i
             let N = self.docs.len() as f32;
             let n_q_i = postings.len() as f32;
-            let idf = (((N - n_q_i + 0.5) / (n_q_i + 0.5)) + 1.0).ln();
+            let idf = (N / n_q_i).ln();
+
+            // `score_qt` is determined by multiplying by `idf`, so if `idf` is
+            // 0 we know that the score can't positively effect the outcome.
+            if idf == 0.0 {
+                continue;
+            }
 
             for posting in &postings {
                 // f(qi, D) = term frequency in document D,
@@ -219,12 +227,19 @@ impl DiskIndex {
             }
         }
 
-        let res: BTreeMap<OrderedFloat<f32>, u64> = weights
-            .into_iter()
-            .map(|(doc, w)| (OrderedFloat(w), doc))
-            .collect();
+        // Note: Don't use a B-Tree for this sorting operation.
+        // f32 doesn't implement Ord, so can't be natively used. OrderedFloat
+        // introduces non-determinism that hides some results.
+        // Sinking to a vector and sorting the vector is a little slower, but
+        // whatever.
 
-        Ok(res.into_iter().map(|(w, n)| (w.0, n)).rev())
+        let mut res = weights
+            .into_iter()
+            .map(|(doc, w)| (w, doc))
+            .collect::<Vec<_>>();
+        res.sort_by(|&a, &b| a.0.partial_cmp(&b.0).unwrap());
+
+        Ok(res.into_iter().rev())
     }
 }
 

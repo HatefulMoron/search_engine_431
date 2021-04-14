@@ -23,7 +23,6 @@ fn main() -> std::io::Result<()> {
     let mut lines = content.split(|c| c == '\n');
 
     while let Some(line) = lines.next() {
-
         if documents.is_empty() {
             documents.push((line, 0));
             continue;
@@ -105,7 +104,6 @@ fn main() -> std::io::Result<()> {
         let mut index_offset: usize = write_varint(&mut index_out, (index.len() as u64) / 1000)?;
 
         for (n, (term, postings)) in index.into_iter().enumerate() {
-
             let post_ptr = postings_offset;
 
             postings_offset += write_postings(
