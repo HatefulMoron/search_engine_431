@@ -1,3 +1,57 @@
+## Overview
+
+### Precision
+
+The trec_eval output using the 50 provided queries is given below,
+```text
+runid                 	all	thomas-passmore
+num_q                 	all	50
+num_ret               	all	416581
+num_rel               	all	6228
+num_rel_ret           	all	4723
+map                   	all	0.2149
+gm_map                	all	0.1061
+Rprec                 	all	0.2468
+bpref                 	all	0.3001
+recip_rank            	all	0.5984
+iprec_at_recall_0.00  	all	0.6445
+iprec_at_recall_0.10  	all	0.4260
+iprec_at_recall_0.20  	all	0.3424
+iprec_at_recall_0.30  	all	0.2974
+iprec_at_recall_0.40  	all	0.2379
+iprec_at_recall_0.50  	all	0.2021
+iprec_at_recall_0.60  	all	0.1702
+iprec_at_recall_0.70  	all	0.1266
+iprec_at_recall_0.80  	all	0.0817
+iprec_at_recall_0.90  	all	0.0417
+iprec_at_recall_1.00  	all	0.0071
+P_5                   	all	0.4120
+P_10                  	all	0.3940
+P_15                  	all	0.3667
+P_20                  	all	0.3540
+P_30                  	all	0.3340
+P_100                 	all	0.2506
+P_200                 	all	0.1897
+P_500                 	all	0.1147
+P_1000                	all	0.0718
+```
+
+### Speed
+
+The search program is able to perform all 50 queries on a single core in less
+than a second on my machine,
+```commandline
+time ./target/release/search < wsj.51-100.titles.queries --trec > out.txt
+
+real    0m0.296s
+user    0m0.257
+sys     0m0.034s
+```
+
+### Compression
+
+In total, the index requires about 90MiB of storage.
+
 ## Building
 A recent version of Rust is required to build the programs. The rust compiler
 can be installed locally per user using [rustup](https://rustup.rs/). 
@@ -28,7 +82,7 @@ accord
 to
 sell
 unit
-,
+..
 ```
 
 ### Index
@@ -57,13 +111,13 @@ All file formats are binary, and they are explained below,
 | Type | Name | Notes |
 |------|------|---------|
 | varint | count | Number of documents indexed. |
+| 32bit float (big endian) | avg_dl | Average document length in terms. |
 
 #### documents.bin element format
 
 | Type | Name | Notes |
 |------|------|---------|
 | varint | length | Size of document name in bytes. |
-| 32bit float (big endian) | avg_dl | Average document length in terms. |
 | UTF-8 bytes | name | Length given by previous value. |
 
 #### postings.bin element format
@@ -101,14 +155,32 @@ directory it is being executed in.
 ```commandline
 $ echo "thomas" | ./target/release/search > out.txt
 $ head out.txt
-WSJ880222-0099 0.06406918
-WSJ871224-0043 0.050482526
-WSJ880921-0145 0.047611043
-WSJ870302-0127 0.04670643
-WSJ881103-0190 0.04633575
-WSJ870106-0023 0.044737965
-WSJ871117-0113 0.04422958
-WSJ900406-0010 0.0432467
-WSJ870720-0147 0.039716356
-WSJ870603-0045 0.039615296
+WSJ911011-0071 5.439788
+WSJ911016-0124 5.439651
+WSJ910905-0063 5.437519
+WSJ911011-0017 5.424574
+WSJ910702-0078 5.413733
+WSJ910717-0008 5.4128447
+WSJ911010-0117 5.4057636
+WSJ911009-0154 5.3985877
+WSJ910702-0086 5.3945026
+WSJ911014-0005 5.3926396
+```
+
+The search program also supports an optional flag for consuming a TREC query
+formatted file,
+
+```commandline
+$ ./target/release/search < wsj.51-100.titles.queries --trec > out.txt
+$ head out.txt
+51 Q0 WSJ871218-0126 0 18.04851 thomas-passmore
+51 Q0 WSJ870204-0011 0 17.34641 thomas-passmore
+51 Q0 WSJ900720-0157 0 17.28592 thomas-passmore
+51 Q0 WSJ910708-0061 0 17.284029 thomas-passmore
+51 Q0 WSJ871028-0094 0 17.07382 thomas-passmore
+51 Q0 WSJ871012-0049 0 17.016558 thomas-passmore
+51 Q0 WSJ920116-0130 0 16.986607 thomas-passmore
+51 Q0 WSJ880321-0045 0 16.938957 thomas-passmore
+51 Q0 WSJ861222-0013 0 16.90653 thomas-passmore
+51 Q0 WSJ870727-0010 0 16.894127 thomas-passmore
 ```
