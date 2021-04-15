@@ -5,11 +5,12 @@ pub struct Terms<'a> {
     matches: Matches<'static, 'a>,
 }
 
+lazy_static! {
+    static ref RE: Regex = Regex::new(r"\w+(?:'\w+)?|[^\w\s]").unwrap();
+}
+
 impl<'a> Terms<'a> {
     pub fn new(buffer: &'a str) -> Self {
-        lazy_static! {
-            static ref RE: Regex = Regex::new(r"\w+(?:'\w+)?|[^\w\s]").unwrap();
-        }
         Terms {
             matches: RE.find_iter(buffer),
         }

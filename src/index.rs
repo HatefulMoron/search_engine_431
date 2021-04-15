@@ -99,9 +99,18 @@ fn main() -> std::io::Result<()> {
         let index_file = File::create("index.bin")?;
         let mut index_out = BufWriter::new(index_file);
 
+        // `index_count` indicates the length of the root index.
+        // If the number of terms is exactly divisible by 1000, we have that
+        // many terms in the root index. Otherwise, there is an extra entry.
+        let index_count = if index.len() % 1000 == 0 {
+            (index.len() as u64) / 1000
+        } else {
+            ((index.len() as u64) / 1000) + 1
+        };
+
         let mut postings_offset: usize = 0;
         let mut blocks_offset: usize = write_varint(&mut block_out, index.len() as u64)?;
-        let mut index_offset: usize = write_varint(&mut index_out, (index.len() as u64) / 1000)?;
+        let mut index_offset: usize = write_varint(&mut index_out, index_count)?;
 
         for (n, (term, postings)) in index.into_iter().enumerate() {
             let post_ptr = postings_offset;
