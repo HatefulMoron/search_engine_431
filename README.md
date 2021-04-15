@@ -85,6 +85,10 @@ unit
 ..
 ```
 
+.. where the first line is used as the document identifier, and the following
+lines are interpreted by the indexing program as terms in the document.
+Empty lines are used to indicate the end of each document.
+
 ### Index
 
 #### Prebuilt Index

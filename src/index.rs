@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fs::File;
 use std::io;
 use std::io::{BufWriter, Read, Write};
 
@@ -6,7 +7,6 @@ mod indexing;
 mod parsing;
 use indexing::index::{write_documents, write_postings, write_term, Document, Posting};
 use indexing::varint::write_varint;
-use std::fs::File;
 
 fn main() -> std::io::Result<()> {
     let stdin = io::stdin();
@@ -19,7 +19,7 @@ fn main() -> std::io::Result<()> {
 
     // Term -> [document -> frequency]
     // Dictionary is set of terms/keys
-    let mut index: BTreeMap<&str, BTreeMap<u64, u64>> = BTreeMap::new();
+    let mut index: BTreeMap<&str, Vec<(u64, u64)>> = BTreeMap::new();
     let mut lines = content.split(|c| c == '\n');
 
     while let Some(line) = lines.next() {
@@ -46,20 +46,19 @@ fn main() -> std::io::Result<()> {
 
         assert!(!line.is_empty());
 
+        let k = documents.len() as u64 - 1;
+
         match index.get_mut(line) {
-            Some(map) => {
-                let k = documents.len() as u64 - 1;
-                match map.get_mut(&k) {
-                    Some(p) => *p += 1,
-                    None => {
-                        map.insert(documents.len() as u64 - 1, 1);
-                    }
+            Some(ind) => {
+                let i = ind.len() - 1;
+                if ind[i].0 != k {
+                    ind.push((k, 1));
+                } else {
+                    ind.get_mut(i).unwrap().1 += 1;
                 }
             }
             None => {
-                let mut map = BTreeMap::new();
-                map.insert(documents.len() as u64 - 1, 1);
-                index.insert(line, map);
+                index.insert(line, vec![(k, 1)]);
             }
         };
     }
@@ -117,7 +116,7 @@ fn main() -> std::io::Result<()> {
 
             postings_offset += write_postings(
                 postings.len() as u64,
-                postings.iter().map(|(&document, &frequency)| Posting {
+                postings.iter().map(|&(document, frequency)| Posting {
                     document,
                     frequency,
                 }),
