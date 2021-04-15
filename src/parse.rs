@@ -31,6 +31,11 @@ fn main() -> std::io::Result<()> {
                         } else {
                             writeln!(out, "\n{}", id)?;
                         }
+
+                        // Write the components of the DOCNO to output
+                        for term in Terms::new(id) {
+                            writeln!(out, "{}", term)?;
+                        }
                     }
                 }
             }
